@@ -128,37 +128,51 @@ ksu_install() {
 	) || die "${name} setup.sh failed"
 
 	# --- verify the installer actually did what it claims ------------------
-	# --- verify the installer actually did what it claims ------------------
+		# --- verify the installer actually did what it claims ------------------
 	local ksu_dir="${KERNEL_DIR}/${dir}"
 	[ -d "$ksu_dir" ] || die "${name} setup.sh finished but ${dir}/ is missing"
 
-	# setup.sh picks its DRIVER_DIR adaptively: common/drivers if it exists,
-	# otherwise the root drivers/. Follow whatever it chose instead of assuming
-	# the root layout, otherwise a GKI-style tree reports a false negative.
+	# 确定 DRIVER_DIR：4.9 内核通常只有 drivers/，GKI 风格才有 common/drivers/
 	local driver_dir
-	if [ -e "${KERNEL_DIR}/common/drivers/kernelsu" ]; then
+	if [ -d "${KERNEL_DIR}/common/drivers" ]; then
 		driver_dir="${KERNEL_DIR}/common/drivers"
-	elif [ -e "${KERNEL_DIR}/drivers/kernelsu" ]; then
-		driver_dir="${KERNEL_DIR}/drivers"
 	else
-		die "kernelsu symlink was not created in either common/drivers or drivers"
+		driver_dir="${KERNEL_DIR}/drivers"
 	fi
-	info "kernelsu symlink detected under ${driver_dir#${KERNEL_DIR}/}"
+	[ -d "$driver_dir" ] || die "no drivers directory found in ${KERNEL_DIR}"
 
-	# If setup.sh used common/drivers but the root drivers/ also exists, add a
-	# compatibility symlink so both paths resolve. Harmless when unused.
+	local link="${driver_dir}/kernelsu"
+	local ksu_kernel_dir="${ksu_dir}/kernel"
+
+	# 检测链接：既检查符号链接本身，也检查目标是否有效
+	if [ ! -L "$link" ] && [ ! -e "$link" ]; then
+		warn "kernelsu symlink missing at ${link}, creating manually"
+		ln -sfn "$(realpath --relative-to="$driver_dir" "$ksu_kernel_dir" 2>/dev/null || echo "$ksu_kernel_dir")" "$link"
+	fi
+
+	# broken symlink：链接在，但目标不存在，重建
+	if [ -L "$link" ] && [ ! -e "$link" ]; then
+		warn "kernelsu symlink at ${link} is broken (target missing), recreating"
+		rm -f "$link"
+		ln -sfn "$(realpath --relative-to="$driver_dir" "$ksu_kernel_dir" 2>/dev/null || echo "$ksu_kernel_dir")" "$link"
+	fi
+
+	# 最终校验：符号链接必须存在（目标是否有效交给后续编译验证）
+	if [ ! -L "$link" ] && [ ! -e "$link" ]; then
+		die "kernelsu symlink could not be created at ${link}"
+	fi
+	info "kernelsu symlink verified: ${link} -> $(readlink "$link" 2>/dev/null || echo '?')"
+
+	# 如果是 common/drivers 布局，补建根目录兼容链接
 	if [ "$driver_dir" = "${KERNEL_DIR}/common/drivers" ] \
 		&& [ -d "${KERNEL_DIR}/drivers" ] \
-		&& [ ! -e "${KERNEL_DIR}/drivers/kernelsu" ]; then
+		&& [ ! -e "${KERNEL_DIR}/drivers/kernelsu" ] \
+		&& [ ! -L "${KERNEL_DIR}/drivers/kernelsu" ]; then
 		ln -sfn "../common/drivers/kernelsu" "${KERNEL_DIR}/drivers/kernelsu"
-		info "created compatibility symlink drivers/kernelsu -> ../common/drivers/kernelsu"
+		info "created compatibility symlink drivers/kernelsu"
 	fi
 
-	# setup.sh only checks whether the word "kernelsu" already appears.  Some
-	# vendor trees carry an obsolete line guarded by CONFIG_WITH_KERNEL_SU, so
-	# setup.sh reports success without adding the CONFIG_KSU rule and the final
-	# link fails with every ksu_handle_* symbol undefined.  Normalize any stale
-	# rule to the symbol declared by the installed Kconfig.
+	# Makefile / Kconfig 校验跟随 driver_dir
 	local driver_makefile="${driver_dir}/Makefile"
 	if ! grep -qE '^[[:space:]]*obj-\$\(CONFIG_KSU\)[[:space:]]*\+=[[:space:]]*kernelsu/?[[:space:]]*$' "$driver_makefile"; then
 		if grep -qE '^[[:space:]]*obj-\$\(CONFIG_[A-Z0-9_]+\)[[:space:]]*\+=[[:space:]]*kernelsu/?[[:space:]]*$' "$driver_makefile"; then
@@ -172,7 +186,7 @@ ksu_install() {
 
 	grep -qE '^[[:space:]]*obj-\$\(CONFIG_KSU\)[[:space:]]*\+=[[:space:]]*kernelsu/?[[:space:]]*$' "$driver_makefile" \
 		|| die "${driver_dir#${KERNEL_DIR}/}/Makefile was not wired to CONFIG_KSU for kernelsu"
-	grep -q 'drivers/kernelsu/Kconfig' "${driver_dir}/Kconfig" \
+	grep -q 'kernelsu/Kconfig' "${driver_dir}/Kconfig" \
 		|| die "${driver_dir#${KERNEL_DIR}/}/Kconfig was not wired up for kernelsu"
 
 	# Confirm we landed on the ref we asked for, catching the silent fallback.
