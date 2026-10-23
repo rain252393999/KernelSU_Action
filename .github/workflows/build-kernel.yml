@@ -159,15 +159,16 @@ jobs:
         run: |
           sudo dpkg --add-architecture i386
           sudo apt-get update -qq
-          # Kept deliberately lean. The historical list here was copied from the
-          # full AOSP platform build docs and pulled in ~40 packages a kernel
-          # build never touches, several of which no longer exist on current
-          # Ubuntu (python2, lib32ncurses5-dev, ...).
+          # 安装基础依赖和 32 位核心库
           sudo apt-get install -y --no-install-recommends \
             bc bison build-essential ccache cpio curl device-tree-compiler flex \
             git libelf-dev libssl-dev lz4 make python3 rsync unzip zip zstd \
-            libncurses-dev \
-            libc6:i386 libncurses5:i386 libstdc++6:i386
+            libncurses-dev libc6:i386 libstdc++6:i386
+            
+          # 手动下载并安装被新版 Ubuntu 淘汰的 libncurses5:i386
+          wget http://archive.ubuntu.com/ubuntu/pool/universe/n/ncurses/libncurses5_6.2-0ubuntu2.1_i386.deb
+          sudo dpkg -i libncurses5_6.2-0ubuntu2.1_i386.deb || sudo apt-get install -f -y
+          
           mkdir -p "$WORKSPACE"
 
       - name: Set up toolchain
