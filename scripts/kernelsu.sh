@@ -201,6 +201,15 @@ ksu_install() {
 		fi
 	fi
 	ok "${name} installed at ${head_desc} (${head_sha})"
+  # --- diagnostic: verify symlink target really exists -------------------
+	info "=== verify symlink target ==="
+	ls -la "${driver_dir}/kernelsu" || warn "symlink listing failed"
+	if [ -d "${ksu_dir}/kernel" ]; then
+		ls "${ksu_dir}/kernel/" | head -5
+	else
+		warn "WARNING: ${ksu_dir}/kernel directory does not exist"
+	fi
+
 
 	# --- publish facts the later steps need --------------------------------
 	local count version_label
