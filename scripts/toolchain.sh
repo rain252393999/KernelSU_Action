@@ -7,11 +7,11 @@ set -euo pipefail
 
 WORKSPACE=${WORKSPACE:?WORKSPACE must be set}
 
-# CLANG_DIR="${WORKSPACE}/clang"
+
 GCC64_DIR="${WORKSPACE}/gcc-64"
 GCC32_DIR="${WORKSPACE}/gcc-32"
 
-# AOSP_CLANG_BASE="https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86"
+
 
 # Known-good AOSP clang branch/version pairs, verified 2026-07-27.
 #
