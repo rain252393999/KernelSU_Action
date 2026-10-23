@@ -105,7 +105,7 @@ make_args() {
 
 build_kernel() {
 	group "Building kernel"
-	export PATH="${CLANG_PATH:-}:${PATH}"
+	# export PATH="${CLANG_PATH:-}:${PATH}"
 	export KBUILD_BUILD_HOST=${KBUILD_BUILD_HOST:-Github-Action}
 	export KBUILD_BUILD_USER=${KBUILD_BUILD_USER:-kernelsu-action}
 
@@ -123,23 +123,25 @@ build_kernel() {
 		info "using custom manager signature (size=${KSU_EXPECTED_SIZE})"
 	fi
 
-	local cc="clang" args
+	local args
 	args=$(make_args)
 	if is_true "${ENABLE_CCACHE:-true}" && command -v ccache >/dev/null; then
-		cc="ccache clang"
+		# 如果你也想用 ccache 缓存 gcc 编译，可以保留
 		export CCACHE_DIR="${CCACHE_DIR:-${WORKSPACE}/.ccache}"
+		export CC="ccache aarch64-linux-android-gcc"
 		info "ccache enabled (dir: ${CCACHE_DIR})"
 	fi
 
 	cd "$KERNEL_DIR"
 	info "make ${args} ${KERNEL_CONFIG}"
 	# shellcheck disable=SC2086
-	make -j"$(nproc --all)" CC=clang $args "${KERNEL_CONFIG}" \
+	# 删除了 CC=clang，让 Make 默认使用 CROSS_COMPILE 前缀
+	make -j"$(nproc --all)" $args "${KERNEL_CONFIG}" \
 		|| die "defconfig generation failed"
 
 	info "make ${args}"
 	# shellcheck disable=SC2086
-	make -j"$(nproc --all)" CC="$cc" $args \
+	make -j"$(nproc --all)" $args \
 		|| die "kernel build failed"
 
 	endgroup
