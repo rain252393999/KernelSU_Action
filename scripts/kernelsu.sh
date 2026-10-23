@@ -126,7 +126,7 @@ ksu_install() {
 			fetch_stdout "$setup_url" | bash
 		fi
 	) || die "${name} setup.sh failed"
-	) || die "${name} setup.sh failed"
+
 
 	# --- 修复：setup.sh 的浅克隆可能没 fetch tag，手动补 ---
 	local ksu_clone="${KERNEL_DIR}/${dir}"
