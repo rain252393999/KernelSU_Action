@@ -126,6 +126,55 @@ ksu_install() {
 			fetch_stdout "$setup_url" | bash
 		fi
 	) || die "${name} setup.sh failed"
+	) || die "${name} setup.sh failed"
+
+	# --- 修复：setup.sh 的浅克隆可能没 fetch tag，手动补 ---
+	local ksu_clone="${KERNEL_DIR}/${dir}"
+	(
+		cd "$ksu_clone"
+		git fetch --tags --unshallow 2>/dev/null || git fetch --tags 2>/dev/null || true
+		if [ -n "$ref" ]; then
+			git checkout "$ref" 2>/dev/null && info "manually checked out ${ref}" \
+				|| warn "could not checkout ${ref}; staying on $(git rev-parse --short HEAD)"
+		fi
+	) || warn "post-setup git fixup failed"
+
+	# --- 动态探测源码目录：包含 Kconfig 和 Makefile 的目录才是真正的源码根 ---
+	local ksu_src=""
+	for candidate in \
+		"${ksu_clone}/kernel" \
+		"${ksu_clone}" \
+		"${ksu_clone}/KernelSU" \
+		"${ksu_clone}/kernel/kernel"; do
+		if [ -f "${candidate}/Kconfig" ] && [ -f "${candidate}/Makefile" ]; then
+			ksu_src="$candidate"
+			break
+		fi
+	done
+	if [ -z "$ksu_src" ]; then
+		warn "could not locate KernelSU source under ${ksu_clone}"
+		warn "top-level: $(ls -1 "$ksu_clone" | head -20 | tr '\n' ' ')"
+		die "KernelSU source layout not recognized in ${dir}"
+	fi
+	info "KernelSU source located at ${ksu_src#${KERNEL_DIR}/}"
+
+	# --- 强制重建 drivers/kernelsu 链接指向真实源码目录 ---
+	local driver_dir
+	if [ -d "${KERNEL_DIR}/common/drivers" ]; then
+		driver_dir="${KERNEL_DIR}/common/drivers"
+	else
+		driver_dir="${KERNEL_DIR}/drivers"
+	fi
+	[ -d "$driver_dir" ] || die "no drivers directory found"
+
+	local link="${driver_dir}/kernelsu"
+	rm -f "$link"
+	ln -sfn "$(realpath --relative-to="$driver_dir" "$ksu_src")" "$link"
+	info "rebuilt symlink: ${link} -> $(readlink "$link")"
+
+	# --- 验证 Kconfig 真的能打开 ---
+	[ -f "${link}/Kconfig" ] || die "rebuilt symlink but ${link}/Kconfig still missing"
+	info "verified: ${link}/Kconfig exists"
 
 	# --- verify the installer actually did what it claims ------------------
 		# --- verify the installer actually did what it claims ------------------
