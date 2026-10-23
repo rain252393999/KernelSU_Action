@@ -128,32 +128,52 @@ ksu_install() {
 	) || die "${name} setup.sh failed"
 
 	# --- verify the installer actually did what it claims ------------------
+	# --- verify the installer actually did what it claims ------------------
 	local ksu_dir="${KERNEL_DIR}/${dir}"
 	[ -d "$ksu_dir" ] || die "${name} setup.sh finished but ${dir}/ is missing"
 
-	local link="${KERNEL_DIR}/drivers/kernelsu"
-	[ -e "$link" ] || die "drivers/kernelsu symlink was not created"
+	# setup.sh picks its DRIVER_DIR adaptively: common/drivers if it exists,
+	# otherwise the root drivers/. Follow whatever it chose instead of assuming
+	# the root layout, otherwise a GKI-style tree reports a false negative.
+	local driver_dir
+	if [ -e "${KERNEL_DIR}/common/drivers/kernelsu" ]; then
+		driver_dir="${KERNEL_DIR}/common/drivers"
+	elif [ -e "${KERNEL_DIR}/drivers/kernelsu" ]; then
+		driver_dir="${KERNEL_DIR}/drivers"
+	else
+		die "kernelsu symlink was not created in either common/drivers or drivers"
+	fi
+	info "kernelsu symlink detected under ${driver_dir#${KERNEL_DIR}/}"
+
+	# If setup.sh used common/drivers but the root drivers/ also exists, add a
+	# compatibility symlink so both paths resolve. Harmless when unused.
+	if [ "$driver_dir" = "${KERNEL_DIR}/common/drivers" ] \
+		&& [ -d "${KERNEL_DIR}/drivers" ] \
+		&& [ ! -e "${KERNEL_DIR}/drivers/kernelsu" ]; then
+		ln -sfn "../common/drivers/kernelsu" "${KERNEL_DIR}/drivers/kernelsu"
+		info "created compatibility symlink drivers/kernelsu -> ../common/drivers/kernelsu"
+	fi
 
 	# setup.sh only checks whether the word "kernelsu" already appears.  Some
 	# vendor trees carry an obsolete line guarded by CONFIG_WITH_KERNEL_SU, so
 	# setup.sh reports success without adding the CONFIG_KSU rule and the final
 	# link fails with every ksu_handle_* symbol undefined.  Normalize any stale
 	# rule to the symbol declared by the installed Kconfig.
-	local driver_makefile="${KERNEL_DIR}/drivers/Makefile"
+	local driver_makefile="${driver_dir}/Makefile"
 	if ! grep -qE '^[[:space:]]*obj-\$\(CONFIG_KSU\)[[:space:]]*\+=[[:space:]]*kernelsu/?[[:space:]]*$' "$driver_makefile"; then
 		if grep -qE '^[[:space:]]*obj-\$\(CONFIG_[A-Z0-9_]+\)[[:space:]]*\+=[[:space:]]*kernelsu/?[[:space:]]*$' "$driver_makefile"; then
 			sed -i -E 's@^[[:space:]]*obj-\$\(CONFIG_[A-Z0-9_]+\)[[:space:]]*\+=[[:space:]]*kernelsu/?[[:space:]]*$@obj-$(CONFIG_KSU) += kernelsu/@' "$driver_makefile"
-			warn "normalized stale drivers/Makefile KernelSU guard to CONFIG_KSU"
+			warn "normalized stale ${driver_dir#${KERNEL_DIR}/}/Makefile KernelSU guard to CONFIG_KSU"
 		else
 			printf '\nobj-$(CONFIG_KSU) += kernelsu/\n' >>"$driver_makefile"
-			warn "added missing CONFIG_KSU rule to drivers/Makefile"
+			warn "added missing CONFIG_KSU rule to ${driver_dir#${KERNEL_DIR}/}/Makefile"
 		fi
 	fi
 
 	grep -qE '^[[:space:]]*obj-\$\(CONFIG_KSU\)[[:space:]]*\+=[[:space:]]*kernelsu/?[[:space:]]*$' "$driver_makefile" \
-		|| die "drivers/Makefile was not wired to CONFIG_KSU for kernelsu"
-	grep -q 'drivers/kernelsu/Kconfig' "${KERNEL_DIR}/drivers/Kconfig" \
-		|| die "drivers/Kconfig was not wired up for kernelsu"
+		|| die "${driver_dir#${KERNEL_DIR}/}/Makefile was not wired to CONFIG_KSU for kernelsu"
+	grep -q 'drivers/kernelsu/Kconfig' "${driver_dir}/Kconfig" \
+		|| die "${driver_dir#${KERNEL_DIR}/}/Kconfig was not wired up for kernelsu"
 
 	# Confirm we landed on the ref we asked for, catching the silent fallback.
 	local head_desc head_sha
