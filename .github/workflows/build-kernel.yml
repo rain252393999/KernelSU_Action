@@ -114,6 +114,9 @@ jobs:
       CCACHE_NOHASHDIR: "true"
       CCACHE_HARDLINK: "true"
 
+      ARCH: arm64
+      CROSS_COMPILE: aarch64-linux-android-
+
       # workflow inputs -> IN_* overrides consumed by scripts/config.sh
       IN_KSU_VARIANT: ${{ inputs.ksu_variant }}
       IN_KSU_REF: ${{ inputs.ksu_ref }}
@@ -154,6 +157,7 @@ jobs:
 
       - name: Install build dependencies
         run: |
+          sudo dpkg --add-architecture i386
           sudo apt-get update -qq
           # Kept deliberately lean. The historical list here was copied from the
           # full AOSP platform build docs and pulled in ~40 packages a kernel
@@ -162,7 +166,8 @@ jobs:
           sudo apt-get install -y --no-install-recommends \
             bc bison build-essential ccache cpio curl device-tree-compiler flex \
             git libelf-dev libssl-dev lz4 make python3 rsync unzip zip zstd \
-            libncurses-dev
+            libncurses-dev \
+            libc6:i386 libncurses5:i386 libstdc++6:i386
           mkdir -p "$WORKSPACE"
 
       - name: Set up toolchain
