@@ -78,7 +78,43 @@ ksu_install() {
 	local variant=$1 requested_ref=${2-}
 
 	[ "$variant" = "none" ] && { info "KernelSU integration disabled"; return 0; }
+	# --- 预装检测：仓库里已有有效链接和源码则跳过 setup.sh ---
+	local preinstalled_link=""
+	for cand in "${KERNEL_DIR}/drivers/kernelsu" "${KERNEL_DIR}/common/drivers/kernelsu"; do
+		if [ -L "$cand" ] && [ -e "$cand/Kconfig" ]; then
+			preinstalled_link="$cand"
+			break
+		fi
+	done
 
+	if [ -n "$preinstalled_link" ]; then
+		local ksu_src_real
+		ksu_src_real=$(readlink -f "$preinstalled_link")
+		info "KernelSU is preinstalled: ${preinstalled_link} -> $(readlink "$preinstalled_link")"
+		info "resolved source: ${ksu_src_real}"
+
+		local head_sha
+		head_sha=$(git -C "$(dirname "$ksu_src_real")" rev-parse --short HEAD 2>/dev/null || echo "preinstalled")
+		local version_label="preinstalled-${head_sha}"
+
+		export_env KSU_DIR "$(basename "$(dirname "$preinstalled_link")")/kernelsu"
+		export_env KSU_NAME "preinstalled-${variant}"
+		export_env KSU_REF_RESOLVED "preinstalled"
+		export_env KSU_VERSION_LABEL "$version_label"
+		export_env KSU_COMMIT_COUNT "1"
+		export_env KSU_SUSFS_BUNDLED_REFS "-"
+		export_env UPLOADNAME "-preinstalled_${version_label}"
+
+		ksu_resolve_hook_mode "${KSU_HOOK_MODE:-auto}" "$(kernel_version "$KERNEL_DIR" || echo 4.9)"
+
+		summary "| KernelSU variant | \`preinstalled-${variant}\` |"
+		summary "| KernelSU source | \`${ksu_src_real#${KERNEL_DIR}/}\` |"
+
+		endgroup
+		return 0
+	fi
+
+	# --- 以下保持原来的 setup.sh 流程 ---
 	local repo setup_ref dir modern_ref legacy_ref susfs_refs name
 	IFS='|' read -r repo setup_ref dir modern_ref legacy_ref susfs_refs name <<<"$(ksu_registry "$variant")"
 
